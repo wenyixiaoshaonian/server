@@ -120,12 +120,6 @@ void Server::sTcpserver(){
   return;
 }
 
-void Server::sUdpserver(){
-    if(daemon(0,0) == -1)
-        exit(EXIT_FAILURE);
-
-}
-
 void Server::sTcpclient(){
   int ret;
   int data_len;
@@ -175,10 +169,97 @@ void Server::sTcpclient(){
   return;
 }
 
-void Server::sUdpclient(){
-    if(daemon(0,0) == -1)
-        exit(EXIT_FAILURE);
+void Server::sUdpserver(){
+  int ret = -1;
+  int n;
+  int on = 1;
+  socklen_t addr_len = sizeof( struct sockaddr_in );
 
+  ulocal_addr.sin_family     = AF_INET;
+  ulocal_addr.sin_port       = htons(umPort);
+  ulocal_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  usSocket_fd = socket(AF_INET,SOCK_DGRAM,0);
+
+  if ( usSocket_fd == -1 ){
+    perror("create socket error");
+    exit(1);
+  }
+  ret = setsockopt(usSocket_fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on));
+  if ( ret == -1 ){
+    perror("setsockopt error");
+  }
+  ret = bind(usSocket_fd,(struct sockaddr *)&ulocal_addr, sizeof(struct sockaddr_in));
+  if(ret == -1 ) {
+    perror("bind error");
+    exit(1);
+  }
+
+  while(1) {
+    memset(in_buf, 0, MESSAGE_SIZE);
+
+    n = recvfrom(usSocket_fd, in_buf, 1023, 0, (struct sockaddr *) &remote_addr, &addr_len);
+    if (n > 0)
+    {
+//      uin_buf[n] = 0;
+      printf("recv data from client:%s %u says: %s\n", inet_ntoa(remote_addr.sin_addr), ntohs(remote_addr.sin_port), in_buf);
+
+      n = sendto(usSocket_fd, in_buf, n, 0, (struct sockaddr *) &remote_addr, sizeof(remote_addr));
+      if (n < 0)
+      {
+        printf("sendto error.\n");
+        break;
+
+      }
+    }
+  } 
+  return; 
+}
+
+void Server::sUdpclient(){
+  int n = -1;
+  socklen_t addr_len = sizeof( struct sockaddr_in );
+  serverAddr.sin_family = AF_INET;
+  serverAddr.sin_port = htons(umPort);
+
+  //inet_addr()函数，将点分十进制IP转换成网络字节序IP
+  serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+  if ((ucSocket_fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+  {
+    printf("socket error.\n");
+    exit(1);
+  }
+
+  while(1) {
+    printf("<<<<send message:\n");
+    fgets(urecvbuf,50, stdin);
+    n = sendto(ucSocket_fd, urecvbuf, strlen(urecvbuf), 0, (struct sockaddr *) &serverAddr, sizeof(serverAddr));
+    if (n < 0)
+    {
+      printf("sendto error.\n");
+      close(ucSocket_fd);
+    }
+
+    n = recvfrom(ucSocket_fd, urecvbuf, 1023, 0, (struct sockaddr *) &serverAddr, &addr_len);
+    if (n > 0)
+    {
+        urecvbuf[n] = 0;
+        printf("received from sever:");
+        puts(urecvbuf);
+    }
+    else if (n == 0) {
+        printf("server closed.\n");
+        return;
+    }
+        
+    else if (n == -1) {
+        printf("recvfrom error.\n");
+        return;
+    }
+        
+  }
+  close(ucSocket_fd);
+  return;
 }
 } // namesapce avdance
 
