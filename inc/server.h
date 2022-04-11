@@ -43,7 +43,7 @@ class Server {
     int ucSocket_fd = -1;
     struct sockaddr_in ulocal_addr;
     int umPort = 9876;
-    char in_buf[MESSAGE_SIZE];
+    char uin_buf[MESSAGE_SIZE];
     char usendbuf[MESSAGE_SIZE];
     char urecvbuf[MESSAGE_SIZE];
 

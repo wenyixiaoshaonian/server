@@ -195,15 +195,15 @@ void Server::sUdpserver(){
   }
 
   while(1) {
-    memset(in_buf, 0, MESSAGE_SIZE);
+    memset(uin_buf, 0, MESSAGE_SIZE);
 
-    n = recvfrom(usSocket_fd, in_buf, 1023, 0, (struct sockaddr *) &remote_addr, &addr_len);
+    n = recvfrom(usSocket_fd, uin_buf, 1023, 0, (struct sockaddr *) &remote_addr, &addr_len);
     if (n > 0)
     {
 //      uin_buf[n] = 0;
-      printf("recv data from client:%s %u says: %s\n", inet_ntoa(remote_addr.sin_addr), ntohs(remote_addr.sin_port), in_buf);
+      printf("recv data from client:%s %u says: %s\n", inet_ntoa(remote_addr.sin_addr), ntohs(remote_addr.sin_port), uin_buf);
 
-      n = sendto(usSocket_fd, in_buf, n, 0, (struct sockaddr *) &remote_addr, sizeof(remote_addr));
+      n = sendto(usSocket_fd, uin_buf, n, 0, (struct sockaddr *) &remote_addr, sizeof(remote_addr));
       if (n < 0)
       {
         printf("sendto error.\n");
