@@ -108,7 +108,7 @@ void Server::sTcpserver(){
       if(ret == 0) {
         break;
       }
-      printf( "receive message:%s\n", in_buf );
+      printf( "receive message:%s", in_buf );
       send(sAccept_fd, (void*)in_buf, MESSAGE_SIZE, 0); 
     }
     printf("close client connection...\n");
@@ -149,7 +149,7 @@ void Server::sTcpclient(){
 
   while(1) {
     memset(sendbuf,0,MESSAGE_SIZE);
-    printf("<<<<send message:");
+    printf("<<<<send message:\n");
     fgets(sendbuf,50, stdin);
 
     ret = send(cSocket_fd,sendbuf,strlen(sendbuf),0);
@@ -169,7 +169,7 @@ void Server::sTcpclient(){
 
     recvbuf[data_len] = '\0';
 
-    printf("%s\n", recvbuf);
+    printf("%s", recvbuf);
   }
   close(cSocket_fd);
   return;
