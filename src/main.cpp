@@ -3,15 +3,20 @@
 #include "string.h"
 int main(int argc, char* argv[])
 {
-  if(argc < 3) {
-    printf("Usage: %s TCP/UDP server/client\n",argv[0]);
+  if(argc < 4 ) {
+    printf("Usage: %s TCP/UDP server/client select/epoll\n",argv[0]);
     return 0;
   }
   avdance::Server* server = new avdance::Server();
 
   if(!strcmp(argv[1],"TCP")) {
     if(!strcmp(argv[2],"server")) {
-        server->sTcpserver();
+      if(!strcmp(argv[3],"select")) {
+        server->sTcpserver_select();
+      }
+      else
+        server->sTcpserver_epoll();
+        
     }
     else {
         server->sTcpclient();

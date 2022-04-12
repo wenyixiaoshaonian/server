@@ -14,6 +14,7 @@ namespace avdance {
 
 Server::Server(){
   in_buf[MESSAGE_SIZE] = {0,};
+  accept_fds[FD_SIZE] = {-1, };
   std::cout << "Server construct..." << std::endl;
 }
 
@@ -64,11 +65,130 @@ void Server::sDaemon(){
 
 }
 
-void Server::sTcpserver(){
+void Server::sTcpserver_select(){
 
   int ret = -1;
   int on = 1;
+  int flags = 1; //open REUSEADDR option
+
+  socklen_t addr_len = sizeof( struct sockaddr_in );
+  sSocket_fd = socket(AF_INET,SOCK_STREAM,0);
+  if ( sSocket_fd == -1 ){
+      perror("create socket error");
+      exit(1);
+  }
+
+  flags = fcntl(sSocket_fd,F_GETFL,0);
+  fcntl(sSocket_fd,F_SETFL,flags | O_NONBLOCK);
+
+  ret = setsockopt(sSocket_fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on));
+  if ( ret == -1 ){
+    perror("setsockopt error");
+  }
+
+  //set local address
+  local_addr.sin_family = AF_INET;
+  local_addr.sin_port = htons(mPort);
+  local_addr.sin_addr.s_addr = INADDR_ANY;
+  bzero(&(local_addr.sin_zero), 8);
+
+  ret = bind(sSocket_fd,(struct sockaddr *)&local_addr, sizeof(struct sockaddr_in));
+  if(ret == -1 ) {
+    perror("bind error");
+    exit(1);
+  }
+
+  ret = listen(sSocket_fd,backlog);
+  if ( ret == -1 ){
+    perror("listen error");
+    exit(1);
+  }
+  max_fd = sSocket_fd; //每次都重新设置 max_fd
+  for(int i=0; i< FD_SIZE; i++){
+    accept_fds[i] = -1; 
+  }  
+  while(1) {
+    FD_ZERO(&fd_sets);
+    FD_SET(sSocket_fd,&fd_sets);
+
+    //修改最大值 并加入句柄集合
+    for(int k=0; k<maxpos;k++) {
+      if(accept_fds[k] != -1) {
+        if (accept_fds[k] > max_fd) {
+          max_fd = accept_fds[k];
+        }
+        printf("fd:%d, k:%d, max_fd:%d\n", accept_fds[k], k, max_fd);
+        FD_SET(accept_fds[k], &fd_sets); //继续向sets添加fd
+      }
+    }
+
+    events = select(max_fd + 1,&fd_sets,NULL,NULL,NULL);
+    if(events < 0) {
+      perror("select");
+      break;
+    }
+    else if(events == 0) {
+      printf("select time out ......");
+      continue;
+    }
+    else if (events) {
+      printf("events:%d\n", events);
+      //新连接
+      if(FD_ISSET(sSocket_fd,&fd_sets)) {
+        int a = 0;
+        for( ; a < FD_SIZE; a++){
+          if(accept_fds[a] == -1){
+            curpos = a;
+            break;
+          }
+        }
+      if(a == FD_SIZE){
+          printf("the connection is full!\n");
+          continue;
+        }
+      sAccept_fd = accept(sSocket_fd,(struct sockaddr *)&remote_addr,&addr_len);
+
+      //将新连接设置为非阻塞
+      flags = fcntl(sAccept_fd,F_GETFL,0);
+      fcntl(sAccept_fd,F_SETFL,flags|O_NONBLOCK);
+      
+      accept_fds[curpos] = sAccept_fd;
+
+      if(curpos+1 > maxpos){
+          maxpos = curpos + 1; 
+        }
+      if(sAccept_fd > max_fd){
+          max_fd = sAccept_fd; 
+        }  
+              printf("new connection fd:%d, curpos = %d \n",sSocket_fd, curpos);
   
+      }
+    }
+    //有数据事件来时
+    for(int j = 0;j < maxpos;j++) {
+      if((accept_fds[j] != -1) && FD_ISSET(accept_fds[j],&fd_sets)) {
+        printf("accept event :%d, accept_fd %d \n",j, accept_fds[j]);
+        memset(in_buf, 0, MESSAGE_SIZE);
+        ret = recv(accept_fds[j],(void*)in_buf,MESSAGE_SIZE,0);
+        if(ret == 0) {
+          close(accept_fds[j]);
+          accept_fds[j] = -1;
+        }
+      printf( "receive message:%s", in_buf );
+      send(accept_fds[j], (void*)in_buf, MESSAGE_SIZE, 0); 
+      }
+    }
+  }
+  printf("quit server...\n");
+  close(sSocket_fd);
+
+  return;
+}
+void Server::sTcpserver_epoll(){
+  int ret = -1;
+  int on = 1;
+  int flags = 1; //open REUSEADDR option
+
   socklen_t addr_len = sizeof( struct sockaddr_in );
   sSocket_fd = socket(AF_INET,SOCK_STREAM,0);
   if ( sSocket_fd == -1 ){
@@ -99,27 +219,58 @@ void Server::sTcpserver(){
     exit(1);
   }
 
+  //create epoll
+  epoll_fd = epoll_create(256); 
+  ev.data.fd = sSocket_fd;
+  ev.events = EPOLLIN;
+  epoll_ctl(epoll_fd,EPOLL_CTL_ADD,sSocket_fd,&ev);
+
   while(1) {
-    sAccept_fd = accept(sSocket_fd,(struct sockaddr *)&remote_addr,&addr_len);
-    while(1) {
-      memset(in_buf, 0, MESSAGE_SIZE);
+    event_number = epoll_wait(epoll_fd,pevents,MAX_EVENTS,TIME_OUT);
+    for(int k = 0;k < event_number;k++) {
+      //如果是监听端口的事件
+      if(pevents[k].data.fd == sSocket_fd) {
+        sAccept_fd = accept(sSocket_fd,(struct sockaddr *)&remote_addr,&addr_len);
+        //将新创建的socket设置为 NONBLOCK 模式
+        flags = fcntl(sAccept_fd, F_GETFL, 0);
+        fcntl(sAccept_fd, F_SETFL, flags|O_NONBLOCK);
 
-      ret = recv(sAccept_fd,(void*)in_buf,MESSAGE_SIZE,0);
-      if(ret == 0) {
-        break;
+        ev.data.fd=sAccept_fd;
+        //设置为边缘触发
+        ev.events=EPOLLIN | EPOLLET;
+        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sAccept_fd, &ev);
+
+        printf("new accept fd:%d\n",sAccept_fd);
       }
-      printf( "receive message:%s", in_buf );
-      send(sAccept_fd, (void*)in_buf, MESSAGE_SIZE, 0); 
-    }
-    printf("close client connection...\n");
-    close(sAccept_fd);
-  }
-  printf("quit server...\n");
-  close(sSocket_fd);
+      else if(pevents[k].events & EPOLLIN) {
+        memset(in_buf, 0, MESSAGE_SIZE);
 
+        ret = recv(pevents[k].data.fd,(void*)in_buf,MESSAGE_SIZE,0);
+        if(ret == MESSAGE_SIZE ){
+          printf("maybe have data....");
+        }
+        else if(ret <= 0){
+            
+            switch (errno){
+              case EAGAIN: //说明暂时已经没有数据了，要等通知
+                break;
+              case EINTR: //被终断了，再来一次
+                printf("recv EINTR... \n");
+                ret = recv(pevents[k].data.fd, &in_buf, MESSAGE_SIZE, 0);
+                break;
+              default:
+                printf("the client is closed, fd:%d\n", pevents[k].data.fd);
+                epoll_ctl(epoll_fd, EPOLL_CTL_DEL, pevents[k].data.fd, &ev); 
+                close(pevents[k].data.fd);
+            }
+        }
+        printf(">>>receive message:%s\n", in_buf);
+        send(pevents[k].data.fd, &in_buf, ret, 0);
+      }
+    }
+  }
   return;
 }
-
 void Server::sTcpclient(){
   int ret;
   int data_len;
