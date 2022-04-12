@@ -9,6 +9,8 @@
 #include <cstring>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 namespace avdance {
 
@@ -190,67 +192,81 @@ void Server::sTcpserver_epoll(){
   int flags = 1; //open REUSEADDR option
 
   socklen_t addr_len = sizeof( struct sockaddr_in );
-  sSocket_fd = socket(AF_INET,SOCK_STREAM,0);
-  if ( sSocket_fd == -1 ){
-      perror("create socket error");
+  
+
+  for(int a = 0;a < NB_PROCESS;a++) {
+    if(pid != 0) {
+      pid = fork();
+    }
+  }
+  if(pid == 0) {
+    sSocket_fd = socket(AF_INET,SOCK_STREAM,0);
+    if ( sSocket_fd == -1 ){
+        perror("create socket error");
+        exit(1);
+    }
+
+    ret = setsockopt(sSocket_fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on));
+    if ( ret == -1 ){
+      perror("setsockopt SO_REUSEADDR error");
+    }
+    ret = setsockopt(sSocket_fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+    if ( ret == -1 ){
+      perror("setsockopt SO_REUSEPORT error");
+    }
+   flags = fcntl(sSocket_fd, F_GETFL, 0);
+   fcntl(sSocket_fd, F_SETFL, flags|O_NONBLOCK|SO_REUSEPORT);
+    //set local address
+    bzero(&local_addr, sizeof(local_addr));  
+    local_addr.sin_family = AF_INET;
+    local_addr.sin_port = htons(mPort);
+    local_addr.sin_addr.s_addr = INADDR_ANY;
+    bzero(&(local_addr.sin_zero), 8);
+
+    ret = bind(sSocket_fd,(struct sockaddr *)&local_addr, sizeof(struct sockaddr_in));
+    if(ret == -1 ) {
+      perror("bind error");
       exit(1);
-  }
+    }
 
-  ret = setsockopt(sSocket_fd,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on));
-  if ( ret == -1 ){
-    perror("setsockopt error");
-  }
+    ret = listen(sSocket_fd,backlog);
+    if ( ret == -1 ){
+      perror("listen error");
+      exit(1);
+    }
+  
+    //create epoll
+    epoll_fd = epoll_create(256); 
+    ev.data.fd = sSocket_fd;
+    ev.events = EPOLLIN;
+    epoll_ctl(epoll_fd,EPOLL_CTL_ADD,sSocket_fd,&ev);
 
-  //set local address
-  local_addr.sin_family = AF_INET;
-  local_addr.sin_port = htons(mPort);
-  local_addr.sin_addr.s_addr = INADDR_ANY;
-  bzero(&(local_addr.sin_zero), 8);
+    while(1) {
+      event_number = epoll_wait(epoll_fd,pevents,MAX_EVENTS,TIME_OUT);
+      for(int k = 0;k < event_number;k++) {
+        //如果是监听端口的事件
+        if(pevents[k].data.fd == sSocket_fd) {
+          printf("listen event... \n");
+          sAccept_fd = accept(sSocket_fd,(struct sockaddr *)&remote_addr,&addr_len);
+          //将新创建的socket设置为 NONBLOCK 模式
+          flags = fcntl(sAccept_fd, F_GETFL, 0);
+          fcntl(sAccept_fd, F_SETFL, flags|O_NONBLOCK);
 
-  ret = bind(sSocket_fd,(struct sockaddr *)&local_addr, sizeof(struct sockaddr_in));
-  if(ret == -1 ) {
-    perror("bind error");
-    exit(1);
-  }
+          ev.data.fd=sAccept_fd;
+          //设置为边缘触发
+          ev.events=EPOLLIN | EPOLLET;
+          epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sAccept_fd, &ev);
 
-  ret = listen(sSocket_fd,backlog);
-  if ( ret == -1 ){
-    perror("listen error");
-    exit(1);
-  }
-
-  //create epoll
-  epoll_fd = epoll_create(256); 
-  ev.data.fd = sSocket_fd;
-  ev.events = EPOLLIN;
-  epoll_ctl(epoll_fd,EPOLL_CTL_ADD,sSocket_fd,&ev);
-
-  while(1) {
-    event_number = epoll_wait(epoll_fd,pevents,MAX_EVENTS,TIME_OUT);
-    for(int k = 0;k < event_number;k++) {
-      //如果是监听端口的事件
-      if(pevents[k].data.fd == sSocket_fd) {
-        sAccept_fd = accept(sSocket_fd,(struct sockaddr *)&remote_addr,&addr_len);
-        //将新创建的socket设置为 NONBLOCK 模式
-        flags = fcntl(sAccept_fd, F_GETFL, 0);
-        fcntl(sAccept_fd, F_SETFL, flags|O_NONBLOCK);
-
-        ev.data.fd=sAccept_fd;
-        //设置为边缘触发
-        ev.events=EPOLLIN | EPOLLET;
-        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sAccept_fd, &ev);
-
-        printf("new accept fd:%d\n",sAccept_fd);
-      }
-      else if(pevents[k].events & EPOLLIN) {
-        memset(in_buf, 0, MESSAGE_SIZE);
-
-        ret = recv(pevents[k].data.fd,(void*)in_buf,MESSAGE_SIZE,0);
-        if(ret == MESSAGE_SIZE ){
-          printf("maybe have data....");
+          printf("new accept fd:%d\n",sAccept_fd);
         }
-        else if(ret <= 0){
-            
+        else if(pevents[k].events & EPOLLIN) {
+          memset(in_buf, 0, MESSAGE_SIZE);
+
+          ret = recv(pevents[k].data.fd,(void*)in_buf,MESSAGE_SIZE,0);
+          if(ret == MESSAGE_SIZE ){
+            printf("maybe have data....");
+          }
+          else if(ret <= 0){
             switch (errno){
               case EAGAIN: //说明暂时已经没有数据了，要等通知
                 break;
@@ -264,10 +280,20 @@ void Server::sTcpserver_epoll(){
                 close(pevents[k].data.fd);
             }
         }
-        printf(">>>receive message:%s\n", in_buf);
-        send(pevents[k].data.fd, &in_buf, ret, 0);
+        else if(ret > 0) {
+          printf(">>>receive message:%s\n", in_buf);
+          send(pevents[k].data.fd, &in_buf, ret, 0);
+        }
+        
+        }
       }
     }
+  close(sSocket_fd);
+  printf("process:%d close sSocket_fd\n", getpid());
+   
+  }
+  else {
+    wait(&status);
   }
   return;
 }

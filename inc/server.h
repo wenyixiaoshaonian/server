@@ -10,6 +10,7 @@
 #define FD_SIZE 1024
 #define MAX_EVENTS 20
 #define TIME_OUT 500
+#define NB_PROCESS 4
 
 namespace avdance {
 
@@ -37,7 +38,7 @@ class Server {
     int sAccept_fd = -1;
     struct sockaddr_in local_addr, remote_addr;
     char in_buf[MESSAGE_SIZE];
-    int mPort = 8444;
+    int mPort = 9980;
     int backlog = 10;
     //select
     fd_set fd_sets;
@@ -51,6 +52,7 @@ class Server {
     int epoll_fd = -1;
     struct epoll_event ev, pevents[MAX_EVENTS];
     int event_number = 0;
+    int status;
 
     int cSocket_fd = -1;
     struct sockaddr_in serverAddr;
