@@ -33,39 +33,39 @@ class Server {
     void sUdpclient();
   private:
     //TCP
-    pid_t pid = -1;
-    int sSocket_fd = -1;
-    int sAccept_fd = -1;
+    pid_t pid;
+    int sSocket_fd;
+    int sAccept_fd;
     struct sockaddr_in local_addr, remote_addr;
     char in_buf[MESSAGE_SIZE];
-    int mPort = 9980;
-    int backlog = 10;
+    int mPort;
+    int backlog;
     //select
     fd_set fd_sets;
     int accept_fds[FD_SIZE];
-    int max_fd = -1;
-    int maxpos = 0;
-    int events=0;
-    int curpos = -1;
+    int max_fd;
+    int maxpos;
+    int events;
+    int curpos;
 
     //epoll
-    int epoll_fd = -1;
+    int epoll_fd;
     struct epoll_event ev, pevents[MAX_EVENTS];
-    int event_number = 0;
+    int event_number;
     int status;
 
-    int cSocket_fd = -1;
+    int cSocket_fd;
     struct sockaddr_in serverAddr;
     char sendbuf[MESSAGE_SIZE];
     char recvbuf[MESSAGE_SIZE];
 
     //UDP
-    int usSocket_fd = -1;
-    int ucSocket_fd = -1;
+    int usSocket_fd;
+    int ucSocket_fd;
     char usendbuf[MESSAGE_SIZE];
     struct sockaddr_in ulocal_addr;
     char urecvbuf[MESSAGE_SIZE];
-    int umPort = 9876;
+    int umPort;
     char uin_buf[MESSAGE_SIZE];
 };
 

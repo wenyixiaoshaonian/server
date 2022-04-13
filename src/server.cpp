@@ -17,6 +17,26 @@ namespace avdance {
 Server::Server(){
   in_buf[MESSAGE_SIZE] = {0,};
   accept_fds[FD_SIZE] = {-1, };
+  char usendbuf[MESSAGE_SIZE] = {0,};
+  char urecvbuf[MESSAGE_SIZE] = {0,};
+  char uin_buf[MESSAGE_SIZE] = {0,};
+  pid = -1;
+  sSocket_fd = -1;
+  sAccept_fd = -1;
+  mPort = 8111;
+  backlog = 10;
+  umPort = 9876;
+  max_fd = -1;
+  maxpos = 0;
+  events=0;
+  curpos = -1;
+
+  epoll_fd = -1;
+  event_number = 0;
+  cSocket_fd = -1;
+  usSocket_fd = -1;
+  ucSocket_fd = -1;
+  umPort = 9876;
   std::cout << "Server construct..." << std::endl;
 }
 
@@ -215,14 +235,13 @@ void Server::sTcpserver_epoll(){
       perror("setsockopt SO_REUSEPORT error");
     }
    flags = fcntl(sSocket_fd, F_GETFL, 0);
-   fcntl(sSocket_fd, F_SETFL, flags|O_NONBLOCK|SO_REUSEPORT);
+   fcntl(sSocket_fd, F_SETFL, flags|O_NONBLOCK);
     //set local address
     bzero(&local_addr, sizeof(local_addr));  
     local_addr.sin_family = AF_INET;
     local_addr.sin_port = htons(mPort);
     local_addr.sin_addr.s_addr = INADDR_ANY;
     bzero(&(local_addr.sin_zero), 8);
-
     ret = bind(sSocket_fd,(struct sockaddr *)&local_addr, sizeof(struct sockaddr_in));
     if(ret == -1 ) {
       perror("bind error");
@@ -304,12 +323,10 @@ void Server::sTcpclient(){
     perror("socket");
     return;
   }
-
   serverAddr.sin_family = AF_INET;
   serverAddr.sin_port = htons(mPort);
-
   //inet_addr()函数，将点分十进制IP转换成网络字节序IP
-  serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+  serverAddr.sin_addr.s_addr = INADDR_ANY;
 
   if(connect(cSocket_fd,(struct sockaddr *)&serverAddr,sizeof(serverAddr)) < 0) {
     perror("connect");
